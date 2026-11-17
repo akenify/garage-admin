@@ -69,7 +69,18 @@ pnpm format:check
 pnpm build
 ```
 
-The tests run against an in-memory fake of the admin API (`src/testing/fake-garage.ts`), which enforces the rules the helpers rely on.
+The tests run against an in-memory fake of the admin API, which enforces the rules the helpers rely on (unique aliases, no re-import of a deleted key, only empty buckets can be deleted). It is exported for your own tests:
+
+```ts
+import { createFakeGarage } from '@akenify/garage-admin/testing';
+
+const fake = createFakeGarage();
+const client = new GarageAdminClient({
+  endpoint: 'http://garage:3903',
+  token: fake.token,
+  fetch: fake.fetch,
+});
+```
 
 ## License
 
