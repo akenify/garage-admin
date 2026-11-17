@@ -23,12 +23,12 @@
     "url": "git+https://github.com/akenify/garage-admin.git"
   },
   "scripts": {
+    "prepare": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "prepublishOnly": "pnpm build"
+    "format:check": "prettier --check ."
   },
   "packageManager": "pnpm@12.15.0",
   "devDependencies": {
