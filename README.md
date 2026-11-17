@@ -55,7 +55,7 @@ Every failure is a `GarageAdminError` with a `kind`: `network`, `auth`, `not_fou
 
 ## Client
 
-`GarageAdminClient` wraps the operations the helpers need: `getBucketByAlias`, `getBucketById`, `createBucket`, `deleteBucket`, `updateBucketQuotas`, `getKey`, `importKey`, `deleteKey`, `allowBucketKey` and `denyBucketKey`. It is not a complete client for the admin API.
+`GarageAdminClient` wraps the operations the helpers need: `getBucketByAlias`, `getBucketById`, `createBucket`, `deleteBucket`, `updateBucketQuotas`, `getKey`, `listKeys`, `importKey`, `deleteKey`, `allowBucketKey` and `denyBucketKey`. It is not a complete client for the admin API.
 
 It targets the v2 API, checked against the Garage 2.5 specification and written for Garage 2.x.
 

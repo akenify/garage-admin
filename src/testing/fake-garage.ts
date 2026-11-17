@@ -100,6 +100,15 @@ export function createFakeGarage(token = 'admin-token') {
           buckets: [],
         });
       }
+      case 'ListKeys':
+        return json(
+          200,
+          [...keys.values()].map((key) => ({
+            id: key.accessKeyId,
+            name: key.name,
+            expired: false,
+          })),
+        );
       case 'ImportKey': {
         if (keys.has(String(b?.accessKeyId)) || deletedKeys.has(String(b?.accessKeyId))) {
           return fail(409, 'KeyAlreadyExists');

@@ -75,4 +75,17 @@ describe('GarageAdminClient', () => {
     ).toBe('s'.repeat(64));
     expect(fake.calls.at(-1)?.query).toMatchObject({ showSecretKey: 'true' });
   });
+
+  it('lists keys with their names and never a secret', async () => {
+    const { client } = clientFor();
+    await client.importKey({
+      accessKeyId: 'GKbbbbbbbbbbbbbbbbbbbbbbbb',
+      secretAccessKey: 's'.repeat(64),
+      name: 'ak_one',
+    });
+    const keys = await client.listKeys();
+
+    expect(keys).toEqual([{ accessKeyId: 'GKbbbbbbbbbbbbbbbbbbbbbbbb', name: 'ak_one' }]);
+    expect(JSON.stringify(keys)).not.toContain('s'.repeat(64));
+  });
 });

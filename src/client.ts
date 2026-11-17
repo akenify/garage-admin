@@ -151,6 +151,12 @@ export class GarageAdminClient {
     );
   }
 
+  /** Every key, with the name it was created with. Never includes secrets. */
+  async listKeys(): Promise<{ accessKeyId: string; name: string }[]> {
+    const keys = await this.#request<{ id: string; name: string }[]>('ListKeys', 'GET');
+    return keys.map((key) => ({ accessKeyId: key.id, name: key.name }));
+  }
+
   /** Imports a key with a chosen id and secret. Fails with `conflict` when the id exists. */
   async importKey(input: {
     accessKeyId: string;
