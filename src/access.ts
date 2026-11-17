@@ -29,8 +29,10 @@ export type RemoveBucketAccessResult = { keyDeleted: boolean; bucketDeleted: boo
  * many times it runs.
  *
  * - The bucket is created when missing.
- * - The key is imported with the given id and secret. Garage cannot change the secret of an
- *   existing key, so a key whose secret differs is deleted and imported again (rotation).
+ * - The key is imported with the given id and secret when it does not exist yet. It never deletes
+ *   a key: Garage cannot change the secret of an existing key, and it never lets a deleted key id
+ *   be imported again. A key that exists with a different secret fails with a `conflict`
+ *   (`KeySecretMismatch`); use `rotateBucketAccess` to move to a new key.
  * - The key gets read and write on this bucket only, and never `owner`, which would let it
  *   delete the bucket or change its permissions.
  */
@@ -54,14 +56,19 @@ export async function ensureBucketAccess(
   const bucket = await ensureBucket(client, input.bucket);
 
   const existing = await client.getKey(input.accessKeyId, { showSecretKey: true });
-  if (existing !== undefined && existing.secretAccessKey !== input.secretAccessKey) {
-    await client.deleteKey(input.accessKeyId);
-  }
-  if (existing === undefined || existing.secretAccessKey !== input.secretAccessKey) {
+  if (existing === undefined) {
     await client.importKey({
       accessKeyId: input.accessKeyId,
       secretAccessKey: input.secretAccessKey,
       name: input.keyName ?? input.bucket,
+    });
+  } else if (existing.secretAccessKey !== input.secretAccessKey) {
+    throw new GarageAdminError({
+      kind: 'conflict',
+      operation: 'ensureBucketAccess',
+      code: 'KeySecretMismatch',
+      message:
+        'garage: this access key exists with a different secret, and Garage cannot change it; rotate to a new key id with rotateBucketAccess',
     });
   }
 
@@ -90,6 +97,37 @@ export async function ensureBucketAccess(
   if (input.quotas !== undefined) await client.updateBucketQuotas(bucket.id, input.quotas);
 
   return { bucketId: bucket.id, bucket: input.bucket, accessKeyId: input.accessKeyId };
+}
+
+export type RotateBucketAccessInput = EnsureBucketAccessInput & {
+  /** The key being replaced. Deleted once the new key has access. */
+  previousAccessKeyId: string;
+};
+
+export type RotateBucketAccessResult = EnsureBucketAccessResult & { previousKeyDeleted: boolean };
+
+/**
+ * Moves an application to new credentials. Garage cannot change a key's secret and never accepts a
+ * deleted key id again, so rotation always means a new key id: the new key is given access first,
+ * then the previous key is deleted, so the application is never left without a working key.
+ * Idempotent: once the previous key is gone, running it again changes nothing.
+ */
+export async function rotateBucketAccess(
+  client: GarageAdminClient,
+  input: RotateBucketAccessInput,
+): Promise<RotateBucketAccessResult> {
+  if (input.previousAccessKeyId === input.accessKeyId) {
+    throw new GarageAdminError({
+      kind: 'invalid',
+      operation: 'rotateBucketAccess',
+      message: 'garage: rotation needs a new access key id, not the one it replaces',
+    });
+  }
+  const { previousAccessKeyId, ...ensure } = input;
+  const result = await ensureBucketAccess(client, ensure);
+  const previous = await client.getKey(previousAccessKeyId);
+  if (previous !== undefined) await client.deleteKey(previousAccessKeyId);
+  return { ...result, previousKeyDeleted: previous !== undefined };
 }
 
 /**

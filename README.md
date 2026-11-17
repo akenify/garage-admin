@@ -3,6 +3,7 @@
 A typed TypeScript client for the [Garage](https://garagehq.deuxfleurs.fr) v2 admin API, with two helpers that give an application its own S3 bucket and credentials:
 
 - `ensureBucketAccess` creates a bucket and a key, and lets the key read and write that bucket only.
+- `rotateBucketAccess` moves the application to a new key and then deletes the old one.
 - `removeBucketAccess` revokes the key and, if asked, deletes the bucket.
 
 Both are idempotent. They are built for multi-tenant hosting, where every tenant gets one bucket and one key, but they work for any application that needs the same.
@@ -38,7 +39,8 @@ await removeBucketAccess(client, { bucket: 'acme', accessKeyId, deleteBucket: tr
 
 - **One bucket, one key.** The key has `read` and `write` on that bucket and is never `owner`. An owner can delete the bucket and change its permissions. If the key already holds more than you asked for, the extra permissions are taken away.
 - **Your credentials.** Garage lets you import a key with a chosen id and secret. The id must be `GK` followed by 24 lowercase hex characters, and the secret 64 lowercase hex characters. `generateKeyPair()` makes a valid pair, and anything else is rejected before any request is made.
-- **Rotation.** Garage cannot change the secret of an existing key. Pass a different secret for the same key id and the key is deleted and imported again.
+- **Never deletes a key.** If the key exists with a different secret, it fails with a `conflict` error (`KeySecretMismatch`). Garage cannot change a key's secret, and it never accepts a deleted key id again, so there is no safe way to "replace" a key under the same id.
+- **Rotation uses a new key id.** `rotateBucketAccess` imports the new key and grants it access first, then deletes the previous key, so the application always has a working key. Keep the key id with the secret, because it changes on every rotation.
 - **Quotas.** Pass `quotas: { maxSize, maxObjects }` to cap the bucket. Leave it out to keep the current quotas.
 
 ## Differences from MinIO and AWS S3

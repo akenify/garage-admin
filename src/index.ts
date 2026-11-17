@@ -1,10 +1,13 @@
 export {
   ensureBucketAccess,
   removeBucketAccess,
+  rotateBucketAccess,
   type EnsureBucketAccessInput,
   type EnsureBucketAccessResult,
   type RemoveBucketAccessInput,
   type RemoveBucketAccessResult,
+  type RotateBucketAccessInput,
+  type RotateBucketAccessResult,
 } from './access.js';
 export {
   GarageAdminClient,

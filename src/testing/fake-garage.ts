@@ -18,6 +18,8 @@ export type RecordedCall = { operation: string; query: Record<string, string>; b
 export function createFakeGarage(token = 'admin-token') {
   const buckets = new Map<string, Bucket>();
   const keys = new Map<string, Key>();
+  /** Garage keeps a tombstone: a deleted key id can never be imported again. */
+  const deletedKeys = new Set<string>();
   const calls: RecordedCall[] = [];
   let nextId = 1;
 
@@ -99,7 +101,9 @@ export function createFakeGarage(token = 'admin-token') {
         });
       }
       case 'ImportKey': {
-        if (keys.has(String(b?.accessKeyId))) return fail(409, 'KeyAlreadyExists');
+        if (keys.has(String(b?.accessKeyId)) || deletedKeys.has(String(b?.accessKeyId))) {
+          return fail(409, 'KeyAlreadyExists');
+        }
         const key: Key = {
           accessKeyId: String(b?.accessKeyId),
           name: String(b?.name ?? ''),
@@ -110,6 +114,7 @@ export function createFakeGarage(token = 'admin-token') {
       }
       case 'DeleteKey': {
         if (!keys.delete(query.id ?? '')) return fail(404, 'NoSuchAccessKey');
+        deletedKeys.add(query.id ?? '');
         for (const bucket of buckets.values()) bucket.keys.delete(query.id ?? '');
         return new Response(null, { status: 204 });
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ensureBucketAccess, removeBucketAccess } from './access.js';
+import { ensureBucketAccess, removeBucketAccess, rotateBucketAccess } from './access.js';
 import { GarageAdminClient } from './client.js';
 import { generateKeyPair } from './keys.js';
 import { createFakeGarage } from './testing/fake-garage.js';
@@ -46,18 +46,34 @@ describe('ensureBucketAccess', () => {
     expect(fake.buckets.size).toBe(1);
   });
 
-  it('rotates the secret by deleting and importing the key again', async () => {
+  it('refuses a different secret for an existing key, and leaves the key working', async () => {
     const { fake, client } = setup();
     const first = generateKeyPair();
     await ensureBucketAccess(client, { bucket: 'acme', ...first });
-    const rotated = { ...first, secretAccessKey: generateKeyPair().secretAccessKey };
-    await ensureBucketAccess(client, { bucket: 'acme', ...rotated });
+    const other = { ...first, secretAccessKey: generateKeyPair().secretAccessKey };
 
-    expect(fake.keys.get(first.accessKeyId)?.secretAccessKey).toBe(rotated.secretAccessKey);
+    await expect(ensureBucketAccess(client, { bucket: 'acme', ...other })).rejects.toMatchObject({
+      kind: 'conflict',
+      code: 'KeySecretMismatch',
+    });
+    expect(fake.keys.get(first.accessKeyId)?.secretAccessKey).toBe(first.secretAccessKey);
     expect(permsOf(fake, 'acme', first.accessKeyId)).toEqual({
       read: true,
       write: true,
       owner: false,
+    });
+    expect(fake.calls.some((call) => call.operation === 'DeleteKey')).toBe(false);
+  });
+
+  it('cannot reuse the id of a key that was deleted (Garage never forgets it)', async () => {
+    const { client } = setup();
+    const pair = generateKeyPair();
+    await ensureBucketAccess(client, { bucket: 'acme', ...pair });
+    await removeBucketAccess(client, { bucket: 'acme', accessKeyId: pair.accessKeyId });
+
+    await expect(ensureBucketAccess(client, { bucket: 'acme', ...pair })).rejects.toMatchObject({
+      kind: 'conflict',
+      code: 'KeyAlreadyExists',
     });
   });
 
@@ -113,6 +129,71 @@ describe('ensureBucketAccess', () => {
         bucket: 'acme',
         ...generateKeyPair(),
         permissions: { read: false, write: false },
+      }),
+    ).rejects.toMatchObject({ kind: 'invalid' });
+  });
+});
+
+describe('rotateBucketAccess', () => {
+  it('gives the new key access, then deletes the previous one', async () => {
+    const { fake, client } = setup();
+    const first = generateKeyPair();
+    await ensureBucketAccess(client, { bucket: 'acme', ...first });
+    const next = generateKeyPair();
+    fake.calls.length = 0;
+
+    const result = await rotateBucketAccess(client, {
+      bucket: 'acme',
+      ...next,
+      previousAccessKeyId: first.accessKeyId,
+    });
+
+    expect(result).toMatchObject({ accessKeyId: next.accessKeyId, previousKeyDeleted: true });
+    expect(fake.keys.has(first.accessKeyId)).toBe(false);
+    expect(permsOf(fake, 'acme', next.accessKeyId)).toEqual({
+      read: true,
+      write: true,
+      owner: false,
+    });
+    const operations = fake.calls.map((call) => call.operation);
+    expect(operations.indexOf('AllowBucketKey')).toBeLessThan(operations.indexOf('DeleteKey'));
+  });
+
+  it('is idempotent once the previous key is gone', async () => {
+    const { client } = setup();
+    const first = generateKeyPair();
+    await ensureBucketAccess(client, { bucket: 'acme', ...first });
+    const next = generateKeyPair();
+    const input = { bucket: 'acme', ...next, previousAccessKeyId: first.accessKeyId };
+    await rotateBucketAccess(client, input);
+
+    expect(await rotateBucketAccess(client, input)).toMatchObject({ previousKeyDeleted: false });
+  });
+
+  it('keeps the previous key when the new one cannot be set up', async () => {
+    const { fake, client } = setup();
+    const first = generateKeyPair();
+    await ensureBucketAccess(client, { bucket: 'acme', ...first });
+
+    await expect(
+      rotateBucketAccess(client, {
+        bucket: 'acme',
+        accessKeyId: 'bad',
+        secretAccessKey: 'bad',
+        previousAccessKeyId: first.accessKeyId,
+      }),
+    ).rejects.toMatchObject({ kind: 'invalid' });
+    expect(fake.keys.has(first.accessKeyId)).toBe(true);
+  });
+
+  it('rejects rotating a key onto itself', async () => {
+    const { client } = setup();
+    const pair = generateKeyPair();
+    await expect(
+      rotateBucketAccess(client, {
+        bucket: 'acme',
+        ...pair,
+        previousAccessKeyId: pair.accessKeyId,
       }),
     ).rejects.toMatchObject({ kind: 'invalid' });
   });
